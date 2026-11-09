@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: wordstorm-coop
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HCNSEC_API_BASE
+        value: https://api.hcnsec.cn/v1
+      - key: HCNSEC_MODEL
+        value: DeepSeek-V4-Pro
+      - key: HCNSEC_API_KEY
+        sync: false

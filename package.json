@@ -1,0 +1,28 @@
+{
+  "name": "wordstorm-coop",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "WORDSTORM — multiplayer 3D word-to-catastrophe survival game",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "server": "node server.mjs",
+    "build": "vite build",
+    "start": "node server.mjs",
+    "check": "node --check server.mjs && node --check src/main.js",
+    "prestart": "node scripts/ensure-build.mjs",
+    "test": "node tests/smoke.mjs"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1",
+    "three": "^0.181.0",
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  }
+}
