@@ -342,7 +342,7 @@ function initSockets(){
   socket.on('disconnect',()=>{if(state.joined){state.joined=false;toast('Соединение прервалось. Переподключаемся...',5000);}});
   socket.on('welcome',data=>{state.id=data.id;state.aiEnabled=data.aiEnabled;});
   socket.on('snapshot',syncSnapshot);
-  socket.on('round',r=>{state.oldRound=r.round;state.roundEnds=Date.now()-state.timeOffset+10000;showWordPrompt(r.pickerId,r.name,r.endsAt);});
+  socket.on('round',r=>{state.oldRound=r.round;state.roundEnds=r.nextRoundAt || Date.now()-state.timeOffset+30000;showWordPrompt(r.pickerId,r.name,r.endsAt);});
   socket.on('word',r=>{state.currentWord=r.word;state.chooseEnds=0;$('word-prompt').classList.add('hidden');$('waiting-notice').classList.remove('hidden');toast(`${r.by} написал: «${r.word}»`,2200);});
   socket.on('disaster',showBanner);
   socket.on('impact',({x,z,color,radius})=>impactParticles(x,z,color,radius));
@@ -463,7 +463,7 @@ function animate(t){requestAnimationFrame(animate);const dt=clamp((t-prevTime)/1
   }
   const now=serverNow();
   const remaining=Math.max(0,(state.roundEnds-now)/1000);
-  $('round-time').textContent=q(remaining)+'s';$('round-fill').style.width=`${clamp(remaining/10*100,0,100)}%`;
+  $('round-time').textContent=q(remaining)+'s';$('round-fill').style.width=`${clamp(remaining/30*100,0,100)}%`;
   const selectRemaining=Math.max(0,(state.chooseEnds-now)/1000);
   $('prompt-seconds').textContent=q(selectRemaining);$('prompt-progress-fill').style.width=`${clamp(selectRemaining/8*100,0,100)}%`;
   $('round-title').textContent=selectRemaining>0?'ИГРОК ВЫБИРАЕТ СЛОВО':'НОВАЯ КАТАСТРОФА ЧЕРЕЗ';

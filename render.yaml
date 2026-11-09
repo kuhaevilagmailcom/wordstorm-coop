@@ -12,5 +12,7 @@ services:
         value: https://api.hcnsec.cn/v1
       - key: HCNSEC_MODEL
         value: DeepSeek-V4-Pro
+      - key: HCNSEC_FALLBACK_MODEL
+        value: DeepSeek-V4-Flash
       - key: HCNSEC_API_KEY
         sync: false

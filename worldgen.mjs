@@ -32,20 +32,62 @@ export function validateScene(raw,prompt){
   return {title:text(raw.title,70)||'Новая катастрофа',description:text(raw.description,125)||'Берегись!',color:color(raw.color),actors};
 }
 const SYSTEM='You are an AI procedural 3D artist and physics designer of a multiplayer survival game. Input is a player description. Return ONLY a compact valid JSON object with keys title (Russian), description (Russian warning), color #RRGGBB, actors array (1 to 3). Each actor: name, count (1..300), spawn (ground|sky|grid|line|ring|edges|cluster|around_players), size (0.15..3.5), damage (0..60), lifetime (5000..22000 ms), model:{parts:[...]}, motion:{type,speed,height,spin,radius,growth,pulse,gravity,phases}. A model has 1..18 colored primitive parts with each part {type,size:[w,h,d],pos:[x,y,z],rot:[rx,ry,rz],color:"#RRGGBB",metalness,roughness}. Part types: box, sphere, cylinder, cone, capsule, torus, icosahedron, dodecahedron, octahedron, tube (points:[[x,y,z],...]), lathe (profile:[[radius,y],...]), extrude (outline:[[x,y],...]). Use a detailed recognizable assembly, not generic placeholders: a phone needs body, screen and cameras; a fridge needs body, door and handles; tree needs trunk and crown. Literal cubes are ONE box part. Motion types static,fall,bounce,wander,chase,orbit,spiral,rise,float,roll,rush,scatter. Behavior phases array can switch types at seconds after spawn e.g [{after:0,type:"static"},{after:3,type:"chase",speed:9}]. Understand QUANTITY and WHERE TO SPAWN and HOW TO MOVE from the player. "many many cubes standing on the ground" => count 240, spawn grid, motion static, NOT falling from sky. "100 refrigerators chase players" => count 100, spawn ground, motion chase. Think creatively about visuals and behavior, obey semantics; not all catastrophes are rain. Safe non-graphic action. No code, no urls, no extra keys.';
-export async function generateScene(prompt,{key,base,model}){
-  const offline=/кубик|кубы|кубов|cubes?/i.test(prompt)?validateScene({title:'Кубический хаос',description:'Кубики заполнили арену',color:'#ffaf61',actors:[{count:Number(prompt.match(/\d{1,4}/)?.[0])||(/много|сотн/i.test(prompt)?240:60),spawn:/пада|неб/i.test(prompt)?'sky':'grid',size:.7,damage:15,lifetime:16000,model:{parts:[{type:'box',color:'#ffaa55',size:[1,1,1]}]},motion:{type:/пада|неб/i.test(prompt)?'fall':/скач|прыга/i.test(prompt)?'bounce':'static'}}]},prompt):null;
-  if(!key)return offline;
-  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),23000);
-  try{
-    const response=await fetch(base.replace(/\/+$/,'')+'/chat/completions',{method:'POST',signal:controller.signal,headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model,temperature:.8,max_tokens:4000,messages:[{role:'system',content:SYSTEM},{role:'user',content:'Design gameplay 3D scene from this description: '+JSON.stringify(prompt)}]})});
-    if(!response.ok)throw Error('AI HTTP '+response.status);
-    const body=await response.json();const raw=body.choices?.[0]?.message?.content;
-    if(typeof raw!=='string')throw Error('Empty AI message');
-    const json=raw.match(/\{[\s\S]*\}/)?.[0];if(!json)throw Error('Missing scene JSON');
-    return validateScene(JSON.parse(json),prompt);
-  }catch(err){console.warn('[WORLDGEN] AI fallback:',err.message);return offline;}
-  finally{clearTimeout(timer);}
+const transientCodes=new Set([408,429,500,502,503,504]);
+const health={state:'idle',lastHttpStatus:null,lastError:null,lastModel:null,lastSuccessAt:null,lastAttemptAt:null};
+export function getAIStatus(configured=true){
+  return configured?{...health}:{state:'not_configured',lastHttpStatus:null,lastError:null,lastModel:null,lastSuccessAt:null,lastAttemptAt:null};
 }
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+export async function generateScene(prompt,{key,base,model,fallbackModel=process.env.HCNSEC_FALLBACK_MODEL||'DeepSeek-V4-Flash'}={}){
+  const offline=/кубик|кубы|кубов|cubes?/i.test(prompt)?validateScene({title:'Кубический хаос',description:'Кубики заполнили арену',color:'#ffaf61',actors:[{count:Number(prompt.match(/\d{1,4}/)?.[0])||(/много|сотн/i.test(prompt)?240:60),spawn:/пада|неб/i.test(prompt)?'sky':'grid',size:.7,damage:15,lifetime:16000,model:{parts:[{type:'box',color:'#ffaa55',size:[1,1,1]}]},motion:{type:/пада|неб/i.test(prompt)?'fall':/скач|прыга/i.test(prompt)?'bounce':'static'}}]},prompt):null;
+  if(!key){health.state='not_configured';return offline;}
+  const primary=String(model||'DeepSeek-V4-Pro').trim();
+  const secondary=String(fallbackModel||'DeepSeek-V4-Flash').trim();
+  const models=secondary && secondary!==primary?[primary,secondary,secondary]:[primary,primary];
+  const root=String(base||'https://api.hcnsec.cn/v1').replace(/\/+$/,'');
+  for(let attempt=0;attempt<models.length;attempt++){
+    const modelName=models[attempt];
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),attempt===0?8500:9500);
+    health.state='connecting';health.lastAttemptAt=new Date().toISOString();health.lastModel=modelName;
+    try{
+      const response=await fetch(root+'/chat/completions',{
+        method:'POST',signal:controller.signal,
+        headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},
+        body:JSON.stringify({model:modelName,temperature:.55,max_tokens:2600,messages:[
+          {role:'system',content:SYSTEM},
+          {role:'user',content:'Design gameplay 3D scene from this description: '+JSON.stringify(prompt)}
+        ]})
+      });
+      if(!response.ok){
+        const error=new Error('AI HTTP '+response.status);
+        error.httpStatus=response.status;
+        throw error;
+      }
+      const body=await response.json();
+      const content=body.choices?.[0]?.message?.content;
+      const raw=typeof content==='string'?content:Array.isArray(content)?content.map(p=>typeof p==='string'?p:(p?.text||'')).join(''):'';
+      if(!raw)throw Error('Empty AI message');
+      const json=raw.match(/\{[\s\S]*\}/)?.[0];
+      if(!json)throw Error('Missing scene JSON');
+      const plan=validateScene(JSON.parse(json),prompt);
+      health.state='ready';health.lastHttpStatus=null;health.lastError=null;health.lastSuccessAt=new Date().toISOString();
+      if(attempt)console.info('[WORLDGEN] AI recovered using '+modelName);
+      return plan;
+    }catch(err){
+      health.state='degraded';
+      health.lastHttpStatus=err.httpStatus||null;
+      health.lastError=err.name==='AbortError'?'timeout':err.httpStatus?'HTTP '+err.httpStatus:'invalid_response_or_network';
+      console.warn('[WORLDGEN] AI attempt '+(attempt+1)+'/'+models.length+' ('+modelName+'): '+health.lastError);
+      const retryable=err.name==='AbortError'||!err.httpStatus||transientCodes.has(err.httpStatus);
+      if(!retryable||attempt===models.length-1)break;
+      await sleep(350*(attempt+1));
+    }finally{clearTimeout(timer);}
+  }
+  console.warn('[WORLDGEN] AI unavailable, using procedural fallback');
+  return offline;
+}
+
 const rand=(a,b)=>a+Math.random()*(b-a);
 let modelSeq=1;
 export function spawnScene(room,word,plan,pickerId,{newHazard,io,ARENA}){
