@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { io } from 'socket.io-client';
+import { createGeneratedRenderer } from './generated.js';
 import './style.css';
 
 const $ = (id) => document.getElementById(id);
@@ -18,6 +19,7 @@ renderer.toneMappingExposure = 1.3;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
+const generatedRenderer = createGeneratedRenderer(THREE,scene);
 scene.background = new THREE.Color('#97b4e0');
 scene.fog = new THREE.FogExp2('#95b7db', 0.0075);
 const camera = new THREE.PerspectiveCamera(64, innerWidth / innerHeight, 0.1, 450);
@@ -311,8 +313,10 @@ function syncSnapshot(snapshot){
     obj.userData.name.visible=p.alive;
   }
   for(const [id,obj] of state.players) if(!ids.has(id)) {scene.remove(obj);dispose(obj);state.players.delete(id);}
+  generatedRenderer.sync(snapshot.models||{}, snapshot.hazards);
   const hazardIDs=new Set();
   for(const h of snapshot.hazards){
+    if(h.kind==='generated')continue;
     hazardIDs.add(h.id);let obj=state.hazards.get(h.id);
     if(!obj){obj=createHazardVisual(h);state.hazards.set(h.id,obj);}
     obj.userData.target=h;
@@ -450,6 +454,7 @@ function animate(t){requestAnimationFrame(animate);const dt=clamp((t-prevTime)/1
     else {obj.userData.root.rotation.y=lerp(obj.userData.root.rotation.y,h.yaw||0,a);if(h.kind==='fall'){obj.userData.root.rotation.x+=dt*1.3;obj.userData.root.rotation.z+=dt*.8;}}
     if(obj.userData.shadow){obj.userData.shadow.position.y=-obj.position.y+.07;obj.userData.shadow.material.opacity=clamp(.27-obj.position.y/100,0,.27);}
   }
+  generatedRenderer.step(dt);
   const me=state.players.get(state.id);
   if(me){cameraAim.set(me.position.x,me.position.y+1.65,me.position.z);desiredCamera.set(cameraAim.x+Math.sin(state.camYaw)*state.camDist*Math.cos(state.camPitch),cameraAim.y+Math.sin(state.camPitch)*state.camDist+2,cameraAim.z+Math.cos(state.camYaw)*state.camDist*Math.cos(state.camPitch));
     camera.position.lerp(desiredCamera,1-Math.exp(-dt*6));
@@ -460,7 +465,7 @@ function animate(t){requestAnimationFrame(animate);const dt=clamp((t-prevTime)/1
   const remaining=Math.max(0,(state.roundEnds-now)/1000);
   $('round-time').textContent=q(remaining)+'s';$('round-fill').style.width=`${clamp(remaining/10*100,0,100)}%`;
   const selectRemaining=Math.max(0,(state.chooseEnds-now)/1000);
-  $('prompt-seconds').textContent=q(selectRemaining);$('prompt-progress-fill').style.width=`${clamp(selectRemaining/5.7*100,0,100)}%`;
+  $('prompt-seconds').textContent=q(selectRemaining);$('prompt-progress-fill').style.width=`${clamp(selectRemaining/8*100,0,100)}%`;
   $('round-title').textContent=selectRemaining>0?'ИГРОК ВЫБИРАЕТ СЛОВО':'НОВАЯ КАТАСТРОФА ЧЕРЕЗ';
   if(selectRemaining<=0&&state.chooseEnds)$('word-prompt').classList.add('hidden');
   const meInfo=state.snapshot?.players.find(p=>p.id===state.id);
