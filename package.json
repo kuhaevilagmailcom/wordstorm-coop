@@ -14,7 +14,7 @@
     "start": "node server.mjs",
     "check": "node --check server.mjs && node --check src/main.js",
     "prestart": "node scripts/ensure-build.mjs",
-    "test": "node tests/smoke.mjs"
+    "test": "node tests/smoke.mjs && node tests/worldgen.mjs"
   },
   "dependencies": {
     "express": "^5.1.0",
