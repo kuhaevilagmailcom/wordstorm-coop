@@ -67,7 +67,7 @@ function publicPlayer(p) {
   return { id: p.id, name: p.name, color: p.color, x: p.x, y: p.y, z: p.z, yaw: p.yaw, health: p.health, alive: p.alive, score: p.score, wins: p.wins, invulnerable: p.invulnerable > Date.now(), respawnAt: p.respawnAt };
 }
 function publicHazard(h, now) {
-  return { id: h.id, kind: h.kind, shape: h.shape, word: h.word, color: h.color,
+  return { id: h.id, kind: h.kind, shape: h.shape, word: h.kind==='generated'?'':h.word, color: h.color,
     x: h.x, y: h.y, z: h.z, yaw: h.yaw || 0, scale: h.scale, radius: h.radius, modelId: h.modelId || null,
     radiusNow: h.kind === 'wave' ? clamp((now - h.spawnAt) / h.ttl * 37, 0, 37) : 0 };
 }
@@ -344,7 +344,7 @@ function simulate(room, now, dt) {
       }
     }
   }
-  for(const id of room.models.keys()) if(![...room.hazards.values()].some(h=>h.modelId===id)) room.models.delete(id);
+  if(room.models) for(const id of room.models.keys()) if(![...room.hazards.values()].some(h=>h.modelId===id)) room.models.delete(id);
 }
 
 io.on('connection', (socket) => {
