@@ -31,7 +31,7 @@ const ARENA = 27.6;
 const rooms = new Map();
 const app = express();
 app.disable('x-powered-by');
-app.get('/api/status', (_, res) => res.json({ ok: true, aiEnabled: Boolean(API_KEY), model: MODEL, ai: getAIStatus(Boolean(API_KEY)), roundSeconds: ROUND_DURATION / 1000, players: [...rooms.values()].reduce((n, room) => n + room.players.size, 0), rooms: rooms.size }));
+app.get('/api/status', (_, res) => res.json({ ok: true, aiEnabled: Boolean(API_KEY || process.env.OPENROUTER_API_KEY), model: MODEL, ai: getAIStatus(Boolean(API_KEY || process.env.OPENROUTER_API_KEY)), roundSeconds: ROUND_DURATION / 1000, players: [...rooms.values()].reduce((n, room) => n + room.players.size, 0), rooms: rooms.size }));
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 app.use(express.static(path.join(ROOT, 'dist'), { maxAge: '1h' }));
 app.get('*splat', (_, res) => {
@@ -334,7 +334,7 @@ io.on('connection', (socket) => {
     room.players.set(socket.id, player);
     currentRoom = room;
     socket.join(code);
-    socket.emit('welcome', { id: socket.id, room: code, aiEnabled: Boolean(API_KEY), model: MODEL, arena: ARENA });
+    socket.emit('welcome', { id: socket.id, room: code, aiEnabled: Boolean(API_KEY || process.env.OPENROUTER_API_KEY), model: MODEL, arena: ARENA });
     ack?.({ ok: true, room: code });
     io.to(code).emit('notice', { kind: 'join', text: `${name} подключился к арене` });
     socket.emit('snapshot', serialize(room, Date.now()));
@@ -400,5 +400,5 @@ setInterval(() => {
   for (const [key, room] of rooms) if (!room.players.size && room.lastEmpty && Date.now() - room.lastEmpty > 60000) rooms.delete(key);
 }, 15000).unref();
 httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`WORDSTORM running on http://localhost:${PORT} | AI: ${API_KEY ? MODEL : 'offline procedural fallback'}`);
+  console.log(`WORDSTORM running on http://localhost:${PORT} | AI: ${API_KEY ? MODEL : (process.env.OPENROUTER_API_KEY ? 'OpenRouter only' : 'offline procedural fallback')}`);
 });

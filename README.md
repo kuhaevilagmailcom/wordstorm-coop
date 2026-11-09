@@ -83,3 +83,17 @@
 Код `503` обычно означает временный сбой или перегрузку внешнего API. Проект сначала запрашивает `HCNSEC_MODEL`, при временном сбое переключается на `HCNSEC_FALLBACK_MODEL` (по умолчанию `DeepSeek-V4-Flash`), а затем повторяет запасную модель с короткой задержкой. Запросы ограничены по времени, каждый ответ проходит валидацию. При недоступности провайдера остаётся процедурный режим — он менее функционален, чем ИИ.
 
 В Render → Environment задайте `HCNSEC_API_BASE=https://api.hcnsec.cn/v1`, `HCNSEC_API_KEY` (секрет), `HCNSEC_MODEL=DeepSeek-V4-Pro`, `HCNSEC_FALLBACK_MODEL=DeepSeek-V4-Flash`. После изменения переменных перезапустите сервис. На `/api/status` значение `aiEnabled` означает, что ключ указан; `ai.state=ready` и `ai.lastSuccessAt` показывают реальный успешный ответ; `ai.lastHttpStatus` показывает последний код ошибки без раскрытия ключа. Если обе модели стабильно возвращают 503, проблема у внешнего сервиса и её нельзя устранить только кодом игры.
+
+## Независимый резервный ИИ (при постоянном HTTP 503)
+
+Повторять две модели HCNSEC бесконечно бесполезно, если сам шлюз выдаёт 503. Игра сначала вызывает HCNSEC Pro, затем Flash. После двух ошибок 503 включается 90-секундная пауза запросов к HCNSEC. Для реальной независимой генерации добавьте **свой ключ OpenRouter** (не ключ HCNSEC) в Render → Environment:
+
+```env
+OPENROUTER_API_BASE=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=deepseek/deepseek-flash
+OPENROUTER_API_KEY=СКОПИРУЙТЕ_ИЗ_OPENROUTER
+```
+
+Создание ключа: https://openrouter.ai/settings/keys. OpenRouter может тарифицировать использование отдельно от HCNSEC. При недоступности обеих сетей работает лишь ограниченная локальная генерация, полноценная генерация новых моделей невозможна.
+
+`/api/status` показывает `ai.backupConfigured`, `ai.lastProvider`, `ai.lastSuccessProvider`, `ai.lastError`, `ai.gatewayCoolingDown`. Значение `aiEnabled` не доказывает, что сервис ответил: проверяйте `ai.state === "ready"` после созданной катастрофы. Ключи API в ответы не попадают.

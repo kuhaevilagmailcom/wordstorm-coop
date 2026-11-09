@@ -16,3 +16,9 @@ services:
         value: DeepSeek-V4-Flash
       - key: HCNSEC_API_KEY
         sync: false
+      - key: OPENROUTER_API_BASE
+        value: https://openrouter.ai/api/v1
+      - key: OPENROUTER_MODEL
+        value: deepseek/deepseek-flash
+      - key: OPENROUTER_API_KEY
+        sync: false
