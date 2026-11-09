@@ -1,5 +1,6 @@
 import express from 'express';
 import { Server } from 'socket.io';
+import { generateScene, spawnScene, updateGenerated } from './worldgen.mjs';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -25,7 +26,7 @@ const API_KEY = process.env.HCNSEC_API_KEY || '';
 const MODEL = process.env.HCNSEC_MODEL || 'DeepSeek-V4-Pro';
 const TICK = 50;
 const ROUND_DURATION = 10000;
-const PICK_DURATION = 5700;
+const PICK_DURATION = 8000;
 const ARENA = 27.6;
 const rooms = new Map();
 const app = express();
@@ -47,7 +48,7 @@ const random = (min, max) => min + Math.random() * (max - min);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
 const cleanName = (str) => typeof str === 'string' ? str.replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 20) : '';
-const cleanWord = (str) => typeof str === 'string' ? str.normalize('NFC').replace(/[\u0000-\u001f<>\[\]{}]/g, '').replace(/\s+/g, ' ').trim().slice(0, 32) : '';
+const cleanWord = (str) => typeof str === 'string' ? str.normalize('NFC').replace(/[\u0000-\u001f<>\[\]{}]/g, '').replace(/\s+/g, ' ').trim().slice(0, 220) : '';
 const cleanRoom = (str) => (typeof str === 'string' ? str : '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 14);
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const autoWords = ['телефон', 'метеорит', 'диван', 'арбуз', 'машина', 'пианино', 'ракета', 'холодильник', 'бургер', 'унитаз', 'гигантские пончики', 'камни'];
@@ -55,7 +56,7 @@ let nextHazardId = 1;
 
 function createRoom(id) {
   return {
-    id, players: new Map(), hazards: new Map(), history: [],
+    id, players: new Map(), hazards: new Map(), models: new Map(), history: [],
     number: 0, pickerId: null, lastPickerId: null, activeWord: '',
     promptEndsAt: 0, nextRoundAt: Date.now() + 3500,
     accepted: false, lastDisaster: null, lastEmpty: Date.now()
@@ -67,7 +68,7 @@ function publicPlayer(p) {
 }
 function publicHazard(h, now) {
   return { id: h.id, kind: h.kind, shape: h.shape, word: h.word, color: h.color,
-    x: h.x, y: h.y, z: h.z, yaw: h.yaw || 0, scale: h.scale, radius: h.radius,
+    x: h.x, y: h.y, z: h.z, yaw: h.yaw || 0, scale: h.scale, radius: h.radius, modelId: h.modelId || null,
     radiusNow: h.kind === 'wave' ? clamp((now - h.spawnAt) / h.ttl * 37, 0, 37) : 0 };
 }
 function newHazard(room, data) {
@@ -157,6 +158,7 @@ async function aiPlan(word) {
 }
 
 function scheduleStorm(room, word, plan, pickerId) {
+  if (Array.isArray(plan.actors)) return spawnScene(room, word, plan, pickerId, {newHazard, io, ARENA});
   const now = Date.now();
   const count = plan.count;
   const shape = plan.shape;
@@ -219,7 +221,7 @@ async function acceptWord(room, playerId, word) {
   room.promptEndsAt = 0;
   const pickerId = playerId;
   io.to(room.id).emit('word', { word, by: room.players.get(pickerId)?.name || 'Хаос' });
-  const plan = await aiPlan(word);
+  const plan = (await generateScene(word, {key: API_KEY, base: API_BASE, model: MODEL})) || localPlan(word);
   // The server may have advanced to another round while AI responded; late AI disasters are still allowed.
   if (rooms.get(room.id) !== room || !room.players.size) return;
   scheduleStorm(room, word, plan, pickerId);
@@ -292,7 +294,9 @@ function simulate(room, now, dt) {
     if (h.spawnAt > now) continue;
     const age = now - h.spawnAt;
     if (age >= h.ttl) { room.hazards.delete(id); continue; }
-    if (h.kind === 'fall') {
+    if (h.kind === 'generated') {
+      updateGenerated(room, h, now, dt, {hit, distance, io, ARENA});
+    } else if (h.kind === 'fall') {
       h.vy -= 21 * dt;
       h.x += h.vx * dt; h.z += h.vz * dt;
       h.y += h.vy * dt;
@@ -340,6 +344,7 @@ function simulate(room, now, dt) {
       }
     }
   }
+  for(const id of room.models.keys()) if(![...room.hazards.values()].some(h=>h.modelId===id)) room.models.delete(id);
 }
 
 io.on('connection', (socket) => {
@@ -416,7 +421,7 @@ function serialize(room, now) {
     activeWord: room.activeWord, lastDisaster: room.lastDisaster,
     players: [...room.players.values()].map(publicPlayer),
     hazards: [...room.hazards.values()].filter((h) => h.spawnAt <= now).map((h) => publicHazard(h, now)),
-    history: room.history
+    history: room.history, models: Object.fromEntries(room.models)
   };
 }
 let lastTick = Date.now(); let frames = 0;
