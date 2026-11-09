@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
+assert.match(source,/const ROUND_DURATION = 30000;/,'30-second rounds on server');
 const between=(a,b)=>source.slice(source.indexOf(a),source.indexOf(b,source.indexOf(a)));
 const common={console,Math,Date,AbortController,setTimeout,clearTimeout,
   clamp:(v,a,b)=>Math.min(b,Math.max(a,v)),
@@ -11,21 +12,11 @@ const common={console,Math,Date,AbortController,setTimeout,clearTimeout,
 const api=between('const categoryRules = [','\nfunction scheduleStorm');
 {
   const c=vm.createContext({...common,API_BASE:'https://example.invalid/v1',API_KEY:'',MODEL:'DeepSeek-V4-Pro'});
-  const {localPlan,aiPlan}=vm.runInContext(api+'\n({localPlan,aiPlan})',c);
+  const {localPlan}=vm.runInContext(api+'\n({localPlan})',c);
   for (const [word,shape] of [['телефон','phone'],['холодильник','fridge'],['машина','car'],['пицца','pizza'],['кот','cat'],['дерево','tree'],['метеорит','meteor'],['несуществующее слово','generic']]) {
     assert.equal(localPlan(word).shape,shape,`category: ${word}`);
-    assert.equal((await aiPlan(word)).shape,shape,`fallback: ${word}`);
   }
   assert.equal(localPlan('телефон').type,'rain');
-}
-{
-  let calls=0;
-  const c=vm.createContext({...common,API_BASE:'https://example.invalid/v1',API_KEY:'secret',MODEL:'DeepSeek-V4-Pro',fetch:async()=>{calls++;return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({shape:'cat',type:'rain',color:'#abc123',title:'Телефоны атакуют',description:'Осторожно, с неба падают смартфоны!',count:31})}}]})};}});
-  const {aiPlan}=vm.runInContext(api+'\n({aiPlan})',c);
-  const result=await aiPlan('телефон');
-  assert.equal(result.shape,'phone','recognized noun must keep its actual model even if AI makes a mistake');
-  assert.equal(result.color,'#abc123');assert.equal(result.count,20);
-  assert.equal(calls,1,'AI should be called once');
 }
 {
   let emitted=[];let hazards=[];
@@ -53,4 +44,4 @@ const api=between('const categoryRules = [','\nfunction scheduleStorm');
   assert.ok(player.y>0,'jump moves the player upward');
   assert.equal(player.health,100);
 }
-console.log('PASS: fallback categories, AI JSON parsing, shape selection, 3D hazards, server movement and jumping');
+console.log('PASS: fallback categories, 30-second rounds, 3D hazards, server movement and jumping');
